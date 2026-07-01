@@ -1,35 +1,56 @@
-# Pedido de certificado SSL (Ruby puro). Implemente a lógica do enunciado.
-# Pode reorganizar à vontade (ex.: separar a máquina de estados em outra classe) —
-# só explique no README.
-#
-# Estados: pending, validating, issued, installed (final), failed (final)
-# Eventos: start_validation, validate_ok, validate_fail, install, cancel
 class Order
   PROVIDERS = %w[lets_encrypt globalsign].freeze
   MAX_VALIDATION_ATTEMPTS = 3
 
-  # Levante isto numa transição não permitida (sugestão de nome).
+  TRANSITIONS = {
+    "pending"    => { start_validation: "validating" },
+    "validating" => { validate_ok: "issued", validate_fail: "validating" },
+    "issued"     => { install: "installed" },
+  }.freeze
+
   class InvalidTransition < StandardError; end
 
-  attr_reader :domain, :provider
-  attr_accessor :status, :validation_attempts
+  attr_reader :domain, :provider, :status, :validation_attempts
 
-  # domain: string (formato de domínio válido); provider: um de PROVIDERS.
-  # Deve recusar criação com dados inválidos.
   def initialize(domain:, provider:)
-    # TODO
-    raise NotImplementedError
+    raise ArgumentError, "domain inválido: #{domain.inspect}"     unless valid_domain?(domain)
+    raise ArgumentError, "provider inválido: #{provider.inspect}" unless PROVIDERS.include?(provider)
+
+    @domain              = domain
+    @provider            = provider
+    @status              = "pending"
+    @validation_attempts = 0
   end
 
-  # Aplica um evento de transição (ver enunciado) e retorna o novo estado.
   def apply(event)
-    # TODO
-    raise NotImplementedError
+    raise InvalidTransition, "estado final: #{status}" if final?
+
+    if event == :cancel
+      @status = "failed"
+      return @status
+    end
+
+    next_state = TRANSITIONS.dig(status, event)
+    raise InvalidTransition, "#{event} não permitido em #{status}" if next_state.nil?
+
+    if event == :validate_fail
+      @validation_attempts += 1
+      next_state = "failed" if @validation_attempts >= MAX_VALIDATION_ATTEMPTS
+    end
+
+    @status = next_state
   end
 
-  # true se o pedido está em um estado final (installed ou failed).
   def final?
-    # TODO
-    raise NotImplementedError
+    status == "installed" || status == "failed"
+  end
+
+  private
+
+  # peguei do https://regexr.com/3au3g
+  DOMAIN_REGEX = '(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]'
+
+  def valid_domain?(domain)
+    domain.is_a?(String) && domain.match?(DOMAIN_REGEX)
   end
 end
